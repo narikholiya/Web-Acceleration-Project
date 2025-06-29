@@ -223,34 +223,38 @@ The **AWS Global Accelerator** ensures that global users are automatically route
 - Assign a security group allowing **SSH (port 22)** and **HTTP (port 80)** if needed.  
 - Attach an **IAM role** with permissions to access **EFS** and **SSM** (optional).
 
----
-
 ### Step 2: Install and Configure Web Server
+- SSH into the EC2 instance
+- Install and start Apache
+  # Update package repositories
+sudo yum update -y
 
-#1. SSH into the EC2 instance.  
+# Install Apache (httpd)
+sudo yum install -y httpd
 
-#2. Install Apache web server by running:
-   ```bash
-   sudo yum update -y
-   sudo yum install -y httpd
-   sudo systemctl start httpd
-   sudo systemctl enable httpd
+# Start the Apache service
+sudo systemctl start httpd
 
-#Step 3: Mount EFS
-sudo yum install -y amazon-efs-utils
+# Enable Apache to start on boot
+sudo systemctl enable httpd
+
+### Step 3: Mount EFS
+- sudo yum install -y amazon-efs-utils
 Mount EFS to a directory (e.g., /var/www/html):
-sudo mkdir -p /var/www/html
-sudo mount -t efs fs-xxxxxxx:/ /var/www/html
+- sudo mkdir -p /var/www/html
+- sudo mount -t efs fs-xxxxxxx:/ /var/www/html
 Add EFS to /etc/fstab for auto-mount on boot.
 
-#Step 4: Add Web Files and Configurations
-•	Deploy website content in /var/www/html (EFS mount).
-•	Web server now serves content stored in EFS — shared across all future EC2s.
+### Step 4: Add Web Files and Configurations
 
-#Step 5: Install MySQL Client & Store Credentials
-Install MySQL client:
-sudo yum install -y mysql
-Create a credentials file in EFS (/var/www/html/db-config.php)
+- Deploy website content in `/var/www/html` (EFS mount).
+- Web server now serves content stored in EFS — shared across all future EC2s.
+  
+### Step 5: Install MySQL Client & Store Credentials
+
+**Install MySQL client:**
+- sudo yum install -y mysql
+Create a credentials file in EFS (/var/www/html/db-config.php):
 <?php
 $dbhost = "your-rds-endpoint";
 $dbuser = "admin";
@@ -258,90 +262,82 @@ $dbpass = "your-password";
 $dbname = "your-db-name";
 ?>
 
-#Step 6: Test RDS Connection
-mysql -h your-rds-endpoint -u admin -p
+### Step 6: Test RDS Connection
 
-#Step 7: Create AMI from Configured EC2
-	Stop the instance (optional).
-	Go to EC2 console → Actions > Create Image (AMI).
-	Name it like webserver-efs-rds-base-ami.
+Use the following command to test the connection to your RDS MySQL database:
+-mysql -h your-rds-endpoint -u admin -p
 
-#Step 8: Create Launch Template
-	Go to EC2 → Launch Templates → Create Template.
-	Select your AMI ID.
-	Choose:
-•	Instance type: t2-micro (for free tier / testing).
-•	Key pair
-•	IAM role
-•	Security group (Web Server SG)
-•	User data (if needed for remounting EFS or service restart).
-	Save the template.
+### Step 7: Create AMI from Configured EC2
 
-## ⚙️ Auto Scaling Group (ASG)
-
-- Use the **launch template** created earlier.  
-- Automatically adjusts the number of EC2 instances based on traffic patterns.  
-- Maintains performance and reduces costs by adding or removing instances dynamically.  
-- Integrated with **ALB health checks** to replace unhealthy instances automatically.
+- Stop the instance (optional).
+- Go to **EC2 Console** → **Actions** > **Create Image (AMI)**.
+- Name it something like: `webserver-efs-rds-base-ami`.
 
 ---
 
-## 📁 Elastic File System (EFS)
+### Step 8: Create Launch Template
 
-- Mounted on all web servers across Availability Zones within each region.  
-- Provides a shared file system for storing:  
-  - Static assets (images, HTML, CSS)  
-  - User uploads  
-  - Web content that needs to be consistent across all instances  
+- Go to **EC2** → **Launch Templates** → **Create Template**.
+- Select your **AMI ID**.
+- Choose the following configuration:
+  - **Instance type**: `t2-micro` (for free tier / testing)
+  - **Key pair**
+  - **IAM role**
+  - **Security group**: Web Server SG
+  - **User data** (if needed for remounting EFS or restarting services)
+
+- Click **Save** to create the launch template.
+
+# AWS Infrastructure Components Overview
+
+## Auto Scaling Group
+- Uses the launch template created earlier.
+- Automatically adjusts the number of EC2 instances based on traffic patterns.
+- Maintains performance and reduces costs by adding or removing instances dynamically.
+- Integrated with Application Load Balancer (ALB) health checks to replace unhealthy instances.
+
+## Elastic File System (EFS)
+- Mounted on all web servers across Availability Zones within each region.
+- Provides a shared file system for storing:
+  - Static assets (images, HTML, CSS)
+  - User uploads
+  - Web content that needs to be consistent across instances
 - Ensures data consistency and centralized storage.
 
----
+## Application Load Balancer (ALB)
+- Deployed in each region to distribute traffic evenly across web servers.
+- Integrated with Auto Scaling Groups.
+- Registered targets are EC2 instances located in private subnets.
+- Accepts requests from AWS Global Accelerator and routes them to the appropriate backend instances.
 
-## 🌐 Application Load Balancer (ALB)
-
-- Deployed in each region to distribute traffic evenly across web servers.  
-- Integrated with Auto Scaling Groups for dynamic scaling.  
-- Registered targets are EC2 instances located in private subnets.  
-- Accepts requests from **AWS Global Accelerator** and routes them to the appropriate backend servers.
-
-## 🚀 Global Accelerator Configuration
-
-### Purpose
+## Global Accelerator Configuration
+**Purpose:**  
 Provides a single static IP address for your global application and routes traffic to the optimal AWS region based on latency and health checks.
 
----
-
-### Integration
-
-- Routes traffic to **Application Load Balancers (ALBs)** in both **India (ap-south-1)** and **USA (us-east-1)** regions.  
+## Integration
+- Routes traffic to Application Load Balancers (ALBs) in both India and USA regions.
 - Ensures users worldwide reach the nearest, most responsive infrastructure.
 
-**Details:**
-
-- **Listener:** TCP on ports **80** and **443**  
+- **Listener:** TCP on ports 80 and 443  
 - **Endpoints:** ALBs in `ap-south-1` and `us-east-1`  
 - **Health checks:** Routes traffic only to healthy endpoints  
 - **Traffic Distribution:** Automatically routes users to the closest healthy region  
 
----
+## Benefits
+- Reduced latency for users across the globe.  
+- High availability through multi-region failover.  
+- Scalable frontend leveraging Auto Scaling.  
+- Centralized and persistent storage with Elastic File System (EFS).  
+- Managed database layer using Amazon RDS.  
+- Simplified SSH management via Bastion Host.  
 
-### Benefits
-
-- Reduced latency for users across the globe  
-- High availability via multi-region failover  
-- Scalable frontend using Auto Scaling  
-- Centralized and persistent storage with Amazon EFS  
-- Managed database layer with Amazon RDS  
-- Simple SSH management through Bastion Host  
-
----
-
-### Testing & Validation
-
-- Test access from different global locations using VPN or tools like GeoPeeker (to see how the site appears worldwide).  
-- Simulate instance failure and validate Global Accelerator’s failover functionality.  
+## Testing & Validation
+- Test access from different global locations using a VPN or tools like GeoPeeker (to see how the site appears worldwide).  
+- Simulate instance failure and validate Global Accelerator’s failover capabilities.  
 - Verify EFS synchronization across web servers.  
 - Confirm database connectivity from the web layer.
+
+
 
 
 
